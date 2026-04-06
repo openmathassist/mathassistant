@@ -15,24 +15,57 @@ from typing import Optional
 class OpenClawClient:
     """Client for calling OpenClaw agents via CLI."""
     
-    def __init__(self, project_dir: Optional[Path] = None, timeout: int = 300):
+    def __init__(
+        self, 
+        project_dir: Optional[Path] = None, 
+        timeout: int = 300,
+        default_model: str = "gemini/gemini-2.5-pro",
+        default_thinking: str = "xhigh",
+    ):
         self.project_dir = project_dir
         self.timeout = timeout
         self._default_agent = os.environ.get("MATHASSIST_OPENCLAW_AGENT", "coder")
+        self._default_model = default_model
+        self._default_thinking = default_thinking
     
-    def _run_openclaw(self, args: list[str], cwd: Optional[Path] = None) -> subprocess.CompletedProcess:
-        """Run openclaw CLI command."""
+    def _run_openclaw(self, args: list[str], cwd: Optional[Path] = None, model: Optional[str] = None, thinking: Optional[str] = None) -> subprocess.CompletedProcess:
+        """Run openclaw CLI command.
+        
+        Args:
+            args: Command arguments
+            cwd: Working directory
+            model: Model override (e.g., "gemini/gemini-2.5-pro")
+            thinking: Thinking level (off|minimal|low|medium|high|xhigh)
+        """
         cmd = ["openclaw"] + args
+        
+        # Build environment with overrides
+        env = {**os.environ}
+        if self.project_dir:
+            env["MATHASSIST_PROJECT"] = str(self.project_dir)
+        if model:
+            env["OPENCLAW_AGENT_MODEL"] = model
+        if thinking:
+            env["OPENCLAW_AGENT_THINKING"] = thinking
+            
         return subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=self.timeout,
             cwd=cwd or self.project_dir,
-            env={**os.environ, "MATHASSIST_PROJECT": str(self.project_dir) if self.project_dir else ""}
+            env=env
         )
     
-    def call_agent(self, agent_id: str, message: str, timeout: Optional[int] = None, local: bool = True) -> str:
+    def call_agent(
+        self, 
+        agent_id: str, 
+        message: str, 
+        timeout: Optional[int] = None,
+        local: bool = True,
+        model: Optional[str] = None,
+        thinking: Optional[str] = None,
+    ) -> str:
         """Call an OpenClaw agent with a message.
         
         Args:
@@ -40,15 +73,23 @@ class OpenClawClient:
             message: Message to send to the agent
             timeout: Override default timeout
             local: Run locally (True) or via Gateway (False)
+            model: Model override (default: gemini/gemini-2.5-pro)
+            thinking: Thinking level (default: xhigh for maximum)
             
         Returns:
             Agent's response text
         """
+        # Use instance defaults if not provided
+        if model is None:
+            model = self._default_model
+        if thinking is None:
+            thinking = self._default_thinking
+            
         args = ["agent", "--agent", agent_id, "--message", message]
         if local:
             args.append("--local")
         
-        result = self._run_openclaw(args, cwd=self.project_dir)
+        result = self._run_openclaw(args, cwd=self.project_dir, model=model, thinking=thinking)
         
         if result.returncode != 0:
             error_msg = result.stderr.strip() or f"Agent {agent_id} failed with code {result.returncode}"
@@ -56,7 +97,13 @@ class OpenClawClient:
         
         return result.stdout.strip()
     
-    def detect_problem_signals(self, content: str, context_messages: list[str] | None = None) -> dict:
+    def detect_problem_signals(
+        self, 
+        content: str, 
+        context_messages: list[str] | None = None,
+        model: Optional[str] = None,
+        thinking: Optional[str] = None,
+    ) -> dict:
         """Use coder agent to detect mathematical problem signals.
         
         This replaces the direct LLM call in refinement/detector.py
@@ -93,7 +140,7 @@ JSON format:
 If no signals detected, return {{"detected": false, "candidates": []}}."""
         
         try:
-            response = self.call_agent("coder", prompt)
+            response = self.call_agent("coder", prompt, model=model, thinking=thinking)
             # Try to extract JSON from response
             return self._extract_json(response)
         except Exception as e:
@@ -104,7 +151,13 @@ If no signals detected, return {{"detected": false, "candidates": []}}."""
                 "error": str(e)
             }
     
-    def draft_problem(self, source_text: str, problem_type: str = "conjecture") -> dict:
+    def draft_problem(
+        self, 
+        source_text: str, 
+        problem_type: str = "conjecture",
+        model: Optional[str] = None,
+        thinking: Optional[str] = None,
+    ) -> dict:
         """Use multi-agent workflow to draft a problem.
         
         Phase 1: coder drafts framework
@@ -124,7 +177,7 @@ Your task:
 
 Respond with structured text (not JSON), ready to be formatted as a problem file."""
         
-        draft = self.call_agent("coder", draft_prompt)
+        draft = self.call_agent("coder", draft_prompt, model=model, thinking=thinking)
         
         # Step 2: helper looks for references (lightweight)
         ref_prompt = f"""Quick check: what mathematical areas or key terms appear in this problem?
@@ -136,7 +189,7 @@ List any relevant mathematical concepts, theorems, or references that might be u
 Keep it brief (bullet points)."""
         
         try:
-            refs = self.call_agent("helper", ref_prompt)
+            refs = self.call_agent("helper", ref_prompt, model=model, thinking=thinking)
         except Exception:
             refs = "(reference lookup skipped)"
         
@@ -158,7 +211,7 @@ Create a well-structured problem file with:
 
 Format as markdown with YAML frontmatter."""
         
-        final = self.call_agent("main", format_prompt)
+        final = self.call_agent("main", format_prompt, model=model, thinking=thinking)
         
         return {
             "draft_id": f"draft-{hash(source_text) % 10000:04d}",
