@@ -59,6 +59,17 @@ async def refine(
         f"Please output the complete updated problem document (Markdown format).",
     )
 
+    # Strip markdown code fences if LLM wraps the response
+    updated_body = updated_body.strip()
+    if updated_body.startswith("```"):
+        lines = updated_body.split("\n")
+        # Remove first line (```markdown or ```)
+        lines = lines[1:]
+        # Remove last line if it's ```
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        updated_body = "\n".join(lines)
+
     # Update draft
     doc.body = updated_body.strip() + "\n"
     doc.meta["refinement_status"] = "checking"
