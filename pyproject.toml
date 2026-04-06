@@ -1,0 +1,31 @@
+[project]
+name = "mathassistant"
+version = "0.1.0"
+description = "MCP server for collaborative mathematical research"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "python-frontmatter>=1.1.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+claude = ["anthropic>=0.40.0"]
+openai = ["openai>=1.0.0"]
+all = ["anthropic>=0.40.0", "openai>=1.0.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mathassistant"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
