@@ -37,11 +37,11 @@ async def detect(
         f'Respond as JSON: {{"detected": true/false, "candidates": [{{"signal_text": "...", "problem_type": "conjecture|lemma|proposition", "confidence": 0.0-1.0}}]}}'
     )
 
-    try:
-        data = json.loads(response.strip().strip("`").strip())
-        return {
-            "detected": data.get("detected", False),
-            "candidates": data.get("candidates", []),
-        }
-    except json.JSONDecodeError:
+    from ..quality.checks import _extract_json
+    data = _extract_json(response)
+    if data is None:
         return {"detected": False, "candidates": []}
+    return {
+        "detected": data.get("detected", False),
+        "candidates": data.get("candidates", []),
+    }

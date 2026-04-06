@@ -16,11 +16,29 @@ class Config:
 
     @classmethod
     def from_env(cls) -> Config:
+        backend = os.environ.get("MATHASSIST_LLM_BACKEND", "claude")
+
+        # Pick API key matching the backend, with MATHASSIST_LLM_API_KEY as override
+        explicit_key = os.environ.get("MATHASSIST_LLM_API_KEY")
+        if explicit_key:
+            api_key = explicit_key
+        elif backend == "gemini":
+            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        elif backend == "claude":
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+        elif backend == "openai":
+            api_key = os.environ.get("OPENAI_API_KEY")
+        else:
+            # Fallback: try all
+            api_key = (
+                os.environ.get("ANTHROPIC_API_KEY")
+                or os.environ.get("OPENAI_API_KEY")
+                or os.environ.get("GOOGLE_API_KEY")
+            )
+
         return cls(
-            llm_backend=os.environ.get("MATHASSIST_LLM_BACKEND", "claude"),
-            llm_api_key=os.environ.get("MATHASSIST_LLM_API_KEY")
-            or os.environ.get("ANTHROPIC_API_KEY")
-            or os.environ.get("OPENAI_API_KEY"),
+            llm_backend=backend,
+            llm_api_key=api_key,
             llm_endpoint=os.environ.get("MATHASSIST_LLM_ENDPOINT"),
             llm_model=os.environ.get("MATHASSIST_LLM_MODEL"),
             default_project_dir=os.environ.get("MATHASSIST_PROJECT_DIR"),

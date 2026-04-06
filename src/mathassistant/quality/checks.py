@@ -6,6 +6,7 @@ Checks use LLM for non-trivial semantic analysis.
 
 from __future__ import annotations
 
+import json
 import re
 
 from ..llm.base import LLMBackend
@@ -15,6 +16,38 @@ from .models import CheckResult, Severity
 MATH_SYSTEM_PROMPT = """\
 You are a mathematical quality checker. Analyze the given problem statement
 and answer precisely. Output ONLY the JSON requested, no other text."""
+
+
+def _extract_json(text: str) -> dict | None:
+    """Robustly extract a JSON object from LLM response text.
+
+    Handles: code fences, surrounding text, multiple lines.
+    """
+    text = text.strip()
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Try stripping markdown code fences
+    if "```" in text:
+        parts = text.split("```")
+        for part in parts:
+            part = part.strip()
+            if part.startswith("json"):
+                part = part[4:].strip()
+            try:
+                return json.loads(part)
+            except json.JSONDecodeError:
+                continue
+    # Try finding a JSON object in the text with regex
+    match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return None
 
 
 def _extract_math_symbols(text: str) -> set[str]:
@@ -48,17 +81,15 @@ async def check_definitions(doc: Document, llm: LLMBackend) -> CheckResult:
         f'Respond as JSON: {{"all_defined": true/false, "undefined": ["sym1", ...], "question": "..."}}'
     )
 
-    try:
-        import json
-        data = json.loads(response.strip().strip("`").strip())
-        if data.get("all_defined", True):
-            return CheckResult("definitions", Severity.PASS, "All symbols defined.")
-        undefined = data.get("undefined", [])
-        question = data.get("question", f"以下符号未定义: {', '.join(undefined)}，请补充定义。")
-        return CheckResult("definitions", Severity.FAIL, f"Undefined symbols: {undefined}", question)
-    except (json.JSONDecodeError, KeyError):
+    data = _extract_json(response)
+    if data is None:
         return CheckResult("definitions", Severity.WARN, "Could not parse definition check result.",
                           "请检查问题中所有数学符号是否都有定义。")
+    if data.get("all_defined", True):
+        return CheckResult("definitions", Severity.PASS, "All symbols defined.")
+    undefined = data.get("undefined", [])
+    question = data.get("question", f"以下符号未定义: {', '.join(str(s) for s in undefined)}，请补充定义。")
+    return CheckResult("definitions", Severity.FAIL, f"Undefined symbols: {undefined}", question)
 
 
 async def check_assumptions_explicit(doc: Document, llm: LLMBackend) -> CheckResult:
@@ -71,17 +102,15 @@ async def check_assumptions_explicit(doc: Document, llm: LLMBackend) -> CheckRes
         f"measurability, regularity conditions, etc. "
         f'Respond as JSON: {{"all_explicit": true/false, "implicit": ["..."], "question": "..."}}'
     )
-    try:
-        import json
-        data = json.loads(response.strip().strip("`").strip())
-        if data.get("all_explicit", True):
-            return CheckResult("assumptions_explicit", Severity.PASS, "All assumptions explicit.")
-        implicit = data.get("implicit", [])
-        question = data.get("question", f"以下假设可能是隐含的: {', '.join(implicit)}，是否需要显式声明？")
-        return CheckResult("assumptions_explicit", Severity.FAIL, f"Implicit assumptions: {implicit}", question)
-    except Exception:
+    data = _extract_json(response)
+    if data is None:
         return CheckResult("assumptions_explicit", Severity.WARN, "Could not parse check result.",
                           "请检查是否有隐含的假设条件未明确写出。")
+    if data.get("all_explicit", True):
+        return CheckResult("assumptions_explicit", Severity.PASS, "All assumptions explicit.")
+    implicit = data.get("implicit", [])
+    question = data.get("question", f"以下假设可能是隐含的: {', '.join(str(s) for s in implicit)}，是否需要显式声明？")
+    return CheckResult("assumptions_explicit", Severity.FAIL, f"Implicit assumptions: {implicit}", question)
 
 
 async def check_assumptions_consistent(doc: Document, llm: LLMBackend) -> CheckResult:
@@ -92,17 +121,15 @@ async def check_assumptions_consistent(doc: Document, llm: LLMBackend) -> CheckR
         f"Are the stated assumptions mutually consistent? Are there any contradictions or redundancies? "
         f'Respond as JSON: {{"consistent": true/false, "issues": ["..."], "question": "..."}}'
     )
-    try:
-        import json
-        data = json.loads(response.strip().strip("`").strip())
-        if data.get("consistent", True):
-            return CheckResult("assumptions_consistent", Severity.PASS, "Assumptions are consistent.")
-        issues = data.get("issues", [])
-        question = data.get("question", f"假设存在以下问题: {'; '.join(issues)}")
-        return CheckResult("assumptions_consistent", Severity.FAIL, f"Consistency issues: {issues}", question)
-    except Exception:
+    data = _extract_json(response)
+    if data is None:
         return CheckResult("assumptions_consistent", Severity.WARN, "Could not parse check result.",
                           "请检查假设条件之间是否存在矛盾或冗余。")
+    if data.get("consistent", True):
+        return CheckResult("assumptions_consistent", Severity.PASS, "Assumptions are consistent.")
+    issues = data.get("issues", [])
+    question = data.get("question", f"假设存在以下问题: {'; '.join(str(s) for s in issues)}")
+    return CheckResult("assumptions_consistent", Severity.FAIL, f"Consistency issues: {issues}", question)
 
 
 async def check_goal_clarity(doc: Document, llm: LLMBackend) -> CheckResult:
@@ -114,16 +141,14 @@ async def check_goal_clarity(doc: Document, llm: LLMBackend) -> CheckResult:
         f"(that can be either true or false), or is it vague/directional? "
         f'Respond as JSON: {{"clear": true/false, "issue": "...", "question": "..."}}'
     )
-    try:
-        import json
-        data = json.loads(response.strip().strip("`").strip())
-        if data.get("clear", True):
-            return CheckResult("goal_clarity", Severity.PASS, "Goal is clear.")
-        question = data.get("question", "目标不够明确，请将其精确为一个可证伪的数学命题。")
-        return CheckResult("goal_clarity", Severity.FAIL, data.get("issue", "Goal is unclear"), question)
-    except Exception:
+    data = _extract_json(response)
+    if data is None:
         return CheckResult("goal_clarity", Severity.WARN, "Could not parse check result.",
                           "请确认证明目标是一个明确的数学命题。")
+    if data.get("clear", True):
+        return CheckResult("goal_clarity", Severity.PASS, "Goal is clear.")
+    question = data.get("question", "目标不够明确，请将其精确为一个可证伪的数学命题。")
+    return CheckResult("goal_clarity", Severity.FAIL, data.get("issue", "Goal is unclear"), question)
 
 
 async def check_type_strength(doc: Document, llm: LLMBackend) -> CheckResult:
@@ -136,15 +161,13 @@ async def check_type_strength(doc: Document, llm: LLMBackend) -> CheckResult:
         f"for the strength and scope of the conclusion? "
         f'Respond as JSON: {{"appropriate": true/false, "suggestion": "...", "question": "..."}}'
     )
-    try:
-        import json
-        data = json.loads(response.strip().strip("`").strip())
-        if data.get("appropriate", True):
-            return CheckResult("type_strength", Severity.PASS, "Type is appropriate.")
-        question = data.get("question", data.get("suggestion", "命题类型可能不太合适，请确认。"))
-        return CheckResult("type_strength", Severity.WARN, data.get("suggestion", "Type may be inappropriate"), question)
-    except Exception:
+    data = _extract_json(response)
+    if data is None:
         return CheckResult("type_strength", Severity.PASS, "Type check inconclusive, proceeding.")
+    if data.get("appropriate", True):
+        return CheckResult("type_strength", Severity.PASS, "Type is appropriate.")
+    question = data.get("question", data.get("suggestion", "命题类型可能不太合适，请确认。"))
+    return CheckResult("type_strength", Severity.WARN, data.get("suggestion", "Type may be inappropriate"), question)
 
 
 async def check_formalizability(doc: Document, llm: LLMBackend) -> CheckResult:
@@ -157,18 +180,15 @@ async def check_formalizability(doc: Document, llm: LLMBackend) -> CheckResult:
         f"Are there well-known libraries covering this area? "
         f'Respond as JSON: {{"formalizable": true/false, "difficulty": "easy|medium|hard", "notes": "...", "question": "..."}}'
     )
-    try:
-        import json
-        data = json.loads(response.strip().strip("`").strip())
-        difficulty = data.get("difficulty", "medium")
-        if data.get("formalizable", True) and difficulty != "hard":
-            return CheckResult("formalizability", Severity.PASS, f"Formalizable (difficulty: {difficulty}).")
-        notes = data.get("notes", "")
-        question = data.get("question", f"形式化难度较高: {notes}")
-        severity = Severity.WARN if data.get("formalizable", True) else Severity.WARN
-        return CheckResult("formalizability", severity, notes, question)
-    except Exception:
+    data = _extract_json(response)
+    if data is None:
         return CheckResult("formalizability", Severity.PASS, "Formalizability check inconclusive.")
+    difficulty = data.get("difficulty", "medium")
+    if data.get("formalizable", True) and difficulty != "hard":
+        return CheckResult("formalizability", Severity.PASS, f"Formalizable (difficulty: {difficulty}).")
+    notes = data.get("notes", "")
+    question = data.get("question", f"形式化难度较高: {notes}")
+    return CheckResult("formalizability", Severity.WARN, notes, question)
 
 
 async def check_edge_cases(doc: Document, llm: LLMBackend) -> CheckResult:
@@ -180,16 +200,14 @@ async def check_edge_cases(doc: Document, llm: LLMBackend) -> CheckResult:
         f"that are not addressed? E.g., n=0, empty set, zero operator, etc. "
         f'Respond as JSON: {{"covered": true/false, "missing": ["..."], "question": "..."}}'
     )
-    try:
-        import json
-        data = json.loads(response.strip().strip("`").strip())
-        if data.get("covered", True):
-            return CheckResult("edge_cases", Severity.PASS, "Edge cases covered.")
-        missing = data.get("missing", [])
-        question = data.get("question", f"以下边界情况未处理: {', '.join(missing)}")
-        return CheckResult("edge_cases", Severity.WARN, f"Missing edge cases: {missing}", question)
-    except Exception:
+    data = _extract_json(response)
+    if data is None:
         return CheckResult("edge_cases", Severity.PASS, "Edge case check inconclusive.")
+    if data.get("covered", True):
+        return CheckResult("edge_cases", Severity.PASS, "Edge cases covered.")
+    missing = data.get("missing", [])
+    question = data.get("question", f"以下边界情况未处理: {', '.join(str(s) for s in missing)}")
+    return CheckResult("edge_cases", Severity.WARN, f"Missing edge cases: {missing}", question)
 
 
 ALL_CHECKS = [

@@ -49,6 +49,15 @@ def get_llm_backend() -> LLMBackend:
         return OpenAIBackend(
             api_key=config.llm_api_key,
             model=config.llm_model or "gpt-4o",
+            base_url=config.llm_endpoint,
+        )
+    elif backend == "gemini":
+        from .gemini import GeminiBackend
+
+        return GeminiBackend(
+            api_key=config.llm_api_key,
+            model=config.llm_model or "gemini-2.5-flash",
+            thinking_budget=8192,
         )
     elif backend == "http":
         from .http_generic import HTTPBackend

@@ -51,9 +51,9 @@ async def create_draft(
         f"Respond as JSON with fields: title, definitions, assumptions, goal, known_results, notes"
     )
 
-    try:
-        data = json.loads(response.strip().strip("`").strip())
-    except json.JSONDecodeError:
+    from ..quality.checks import _extract_json
+    data = _extract_json(response)
+    if data is None:
         data = {
             "title": "待定义的问题",
             "definitions": source_text,

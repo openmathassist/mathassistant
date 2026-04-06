@@ -6,12 +6,15 @@ import json
 
 
 class OpenAIBackend:
-    def __init__(self, api_key: str | None = None, model: str = "gpt-4o"):
+    def __init__(self, api_key: str | None = None, model: str = "gpt-4o", base_url: str | None = None):
         try:
             import openai
         except ImportError:
             raise ImportError("Install openai: pip install mathassistant[openai]")
-        self._client = openai.AsyncOpenAI(api_key=api_key)
+        kwargs = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        self._client = openai.AsyncOpenAI(**kwargs)
         self._model = model
 
     async def complete(
