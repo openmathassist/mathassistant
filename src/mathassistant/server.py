@@ -2,12 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("mathassistant")
+
+
+def _run_async(coro):
+    """Run coroutine safely from sync or async context (Python 3.10+)."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — create one
+        return asyncio.run(coro)
+    else:
+        # Running loop exists — nest gracefully
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(loop.run_until_complete, coro)
+            return future.result()
 
 
 def _cascade_update(project_dir: Path, operation: str, description: str) -> None:
@@ -141,9 +157,7 @@ def generate_summary(
     from .summarizer import summarize
 
     d = date.fromisoformat(date_str) if date_str else None
-    import asyncio
-
-    result = asyncio.run(summarize(Path(project_dir), d, scope))
+    result = _run_async(summarize(Path(project_dir), d, scope))
     _cascade_update(project_dir, "summary", f"Generated {scope} summary")
     return result
 
@@ -162,9 +176,7 @@ def detect_problems(
     """Analyze text for signals of provable mathematical problems."""
     from .refinement.detector import detect
 
-    import asyncio
-
-    result = asyncio.run(detect(Path(project_dir), content, context_messages))
+    result = _run_async(detect(Path(project_dir), content, context_messages))
     if result.get("detected"):
         n = len(result.get("candidates", []))
         _cascade_update(project_dir, "detect", f"Detected {n} problem signal(s)")
@@ -181,9 +193,7 @@ def draft_problem(
     """Generate a draft problem file from discussion context. Does not write to disk."""
     from .refinement.drafter import create_draft
 
-    import asyncio
-
-    result = asyncio.run(
+    result = _run_async(
         create_draft(Path(project_dir), source_text, context_messages, problem_type)
     )
     _cascade_update(
@@ -201,9 +211,7 @@ def check_problem_quality(
     """Run the 7-point quality checker on a problem draft or existing problem file."""
     from .quality.checker import run_checks
 
-    import asyncio
-
-    return asyncio.run(run_checks(Path(project_dir), draft_id, problem_path))
+    return _run_async(run_checks(Path(project_dir), draft_id, problem_path))
 
 
 @mcp.tool()
@@ -215,9 +223,7 @@ def refine_problem(
     """Incorporate user response into problem draft. Re-runs quality checker."""
     from .refinement.loop import refine
 
-    import asyncio
-
-    result = asyncio.run(refine(Path(project_dir), draft_id, user_response))
+    result = _run_async(refine(Path(project_dir), draft_id, user_response))
     status = "passed" if result.get("ready_to_finalize") else "refining"
     _cascade_update(project_dir, "refine", f"{draft_id} {status}")
     return result
@@ -228,9 +234,7 @@ def finalize_problem(project_dir: str, draft_id: str) -> dict:
     """Write finalized problem to problems/*.md and commit to Git."""
     from .refinement.loop import finalize
 
-    import asyncio
-
-    result = asyncio.run(finalize(Path(project_dir), draft_id))
+    result = _run_async(finalize(Path(project_dir), draft_id))
     if not result.get("error"):
         _cascade_update(project_dir, "finalize", f"Problem written to {result.get('file_path', '')}")
     return result
@@ -246,9 +250,7 @@ def lint_project(project_dir: str) -> dict:
     """Run project-level health checks: contradictions, orphans, missing concepts, suggestions."""
     from .lint import run_lint
 
-    import asyncio
-
-    result = asyncio.run(run_lint(Path(project_dir)))
+    result = _run_async(run_lint(Path(project_dir)))
     n_issues = len(result.get("issues", []))
     _cascade_update(project_dir, "lint", f"Found {n_issues} issue(s)")
     return result
@@ -270,9 +272,7 @@ def batch_ingest(
     """
     from .ingest import batch_ingest_sources
 
-    import asyncio
-
-    result = asyncio.run(batch_ingest_sources(Path(project_dir), sources))
+    result = _run_async(batch_ingest_sources(Path(project_dir), sources))
     _cascade_update(project_dir, "batch-ingest", f"Batch ingested {len(sources)} source(s)")
     return result
 
