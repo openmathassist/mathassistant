@@ -44,6 +44,29 @@ def initialize_project(project_dir: Path, project_name: str) -> dict:
     )
     problem.write(project_dir / "problem.md")
 
+    # Create schema.md (project-level AI behavior spec, evolves over time)
+    schema_path = project_dir / "schema.md"
+    if not schema_path.exists():
+        schema_path.write_text(
+            f"# {project_name} — AI 行为规范\n\n"
+            "此文件定义 AI 在本项目中的行为规范，随项目演进可更新。\n\n"
+            "## 领域约定\n\n[待填写：本项目涉及的数学领域、常用记号约定]\n\n"
+            "## 工作偏好\n\n- 语言：中文为主，数学术语保留英文\n"
+            "- 证明风格：[待定]\n"
+            "- 问题精炼：优先确保自包含性\n\n"
+            "## 优先级\n\n[待填写：当前阶段的重点方向]\n",
+            encoding="utf-8",
+        )
+
+    # Create log.md
+    log_path = project_dir / "log.md"
+    if not log_path.exists():
+        log_path.write_text("# 项目日志\n\n", encoding="utf-8")
+
+    # Build initial index
+    from .storage.index import update_index
+    update_index(project_dir)
+
     # Git init if not already
     git_initialized = False
     if not (project_dir / ".git").exists():

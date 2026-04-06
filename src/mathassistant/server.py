@@ -10,6 +10,15 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("mathassistant")
 
 
+def _cascade_update(project_dir: Path, operation: str, description: str) -> None:
+    """Log the operation and refresh index."""
+    from .storage.log import append_log
+    from .storage.index import update_index
+
+    append_log(Path(project_dir), operation, description)
+    update_index(Path(project_dir))
+
+
 # ---------------------------------------------------------------------------
 # Discussion tools
 # ---------------------------------------------------------------------------
@@ -30,6 +39,7 @@ def record_message(
 
     ts = datetime.fromisoformat(timestamp) if timestamp else None
     path, count = append_message(Path(project_dir), author, content, ts)
+    _cascade_update(project_dir, "message", f"{author}: {content[:60]}")
     return {
         "file_path": str(path),
         "message_count_today": count,
@@ -59,7 +69,7 @@ def get_discussion_history(
 
 
 # ---------------------------------------------------------------------------
-# Git tools (Phase 2)
+# Git tools
 # ---------------------------------------------------------------------------
 
 
@@ -68,11 +78,14 @@ def git_sync(project_dir: str, message: str | None = None) -> dict:
     """Stage all changes and commit to Git. Auto-generates commit message if omitted."""
     from .git_sync import auto_commit
 
-    return auto_commit(Path(project_dir), message)
+    result = auto_commit(Path(project_dir), message)
+    if result.get("committed"):
+        _cascade_update(project_dir, "git-sync", result.get("message", "commit"))
+    return result
 
 
 # ---------------------------------------------------------------------------
-# Project management tools (Phase 2)
+# Project management tools
 # ---------------------------------------------------------------------------
 
 
@@ -81,7 +94,9 @@ def init_project(project_dir: str, project_name: str) -> dict:
     """Initialize a new math research project with directory structure and git init."""
     from .project import initialize_project
 
-    return initialize_project(Path(project_dir), project_name)
+    result = initialize_project(Path(project_dir), project_name)
+    _cascade_update(project_dir, "init", f"项目初始化: {project_name}")
+    return result
 
 
 @mcp.tool()
@@ -92,8 +107,27 @@ def get_project_state(project_dir: str) -> dict:
     return project_state(Path(project_dir))
 
 
+@mcp.tool()
+def get_project_log(project_dir: str, last_n: int = 20) -> dict:
+    """Read the project activity log. Returns the last N entries."""
+    from .storage.log import read_log
+
+    entries = read_log(Path(project_dir), last_n)
+    return {"entries": entries, "count": len(entries)}
+
+
+@mcp.tool()
+def get_project_index(project_dir: str) -> dict:
+    """Read the project index (content catalog with summaries). LLM should read this first."""
+    index_path = Path(project_dir) / "index.md"
+    if not index_path.exists():
+        from .storage.index import update_index
+        update_index(Path(project_dir))
+    return {"index": index_path.read_text(encoding="utf-8") if index_path.exists() else ""}
+
+
 # ---------------------------------------------------------------------------
-# Summary tools (Phase 4)
+# Summary tools
 # ---------------------------------------------------------------------------
 
 
@@ -109,11 +143,13 @@ def generate_summary(
     d = date.fromisoformat(date_str) if date_str else None
     import asyncio
 
-    return asyncio.run(summarize(Path(project_dir), d, scope))
+    result = asyncio.run(summarize(Path(project_dir), d, scope))
+    _cascade_update(project_dir, "summary", f"生成{scope}摘要")
+    return result
 
 
 # ---------------------------------------------------------------------------
-# Problem refinement tools (Phase 6)
+# Problem refinement tools
 # ---------------------------------------------------------------------------
 
 
@@ -128,7 +164,11 @@ def detect_problems(
 
     import asyncio
 
-    return asyncio.run(detect(Path(project_dir), content, context_messages))
+    result = asyncio.run(detect(Path(project_dir), content, context_messages))
+    if result.get("detected"):
+        n = len(result.get("candidates", []))
+        _cascade_update(project_dir, "detect", f"检测到 {n} 个待证问题信号")
+    return result
 
 
 @mcp.tool()
@@ -143,9 +183,13 @@ def draft_problem(
 
     import asyncio
 
-    return asyncio.run(
+    result = asyncio.run(
         create_draft(Path(project_dir), source_text, context_messages, problem_type)
     )
+    _cascade_update(
+        project_dir, "draft", f"创建问题草稿 {result.get('draft_id', '')}: {result.get('title', '')[:40]}"
+    )
+    return result
 
 
 @mcp.tool()
@@ -173,7 +217,10 @@ def refine_problem(
 
     import asyncio
 
-    return asyncio.run(refine(Path(project_dir), draft_id, user_response))
+    result = asyncio.run(refine(Path(project_dir), draft_id, user_response))
+    status = "通过" if result.get("ready_to_finalize") else "继续精炼"
+    _cascade_update(project_dir, "refine", f"{draft_id} {status}")
+    return result
 
 
 @mcp.tool()
@@ -183,7 +230,51 @@ def finalize_problem(project_dir: str, draft_id: str) -> dict:
 
     import asyncio
 
-    return asyncio.run(finalize(Path(project_dir), draft_id))
+    result = asyncio.run(finalize(Path(project_dir), draft_id))
+    if not result.get("error"):
+        _cascade_update(project_dir, "finalize", f"问题已写入 {result.get('file_path', '')}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Lint tool
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def lint_project(project_dir: str) -> dict:
+    """Run project-level health checks: contradictions, orphans, missing concepts, suggestions."""
+    from .lint import run_lint
+
+    import asyncio
+
+    result = asyncio.run(run_lint(Path(project_dir)))
+    n_issues = len(result.get("issues", []))
+    _cascade_update(project_dir, "lint", f"发现 {n_issues} 个问题")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Batch ingest tool
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def batch_ingest(
+    project_dir: str,
+    sources: list[dict],
+) -> dict:
+    """Batch ingest multiple sources (papers, historical discussions).
+
+    Each source: {"type": "paper"|"discussion", "content": "...", "title": "...", "author": "..."}
+    """
+    from .ingest import batch_ingest_sources
+
+    import asyncio
+
+    result = asyncio.run(batch_ingest_sources(Path(project_dir), sources))
+    _cascade_update(project_dir, "batch-ingest", f"批量导入 {len(sources)} 个来源")
+    return result
 
 
 # ---------------------------------------------------------------------------
