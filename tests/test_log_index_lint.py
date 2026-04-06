@@ -61,8 +61,8 @@ def test_update_index_creates_both_files(project_dir):
     index_md = project_dir / "index.md"
     assert index_md.exists()
     content = index_md.read_text()
-    assert "项目索引" in content
-    assert "讨论记录" in content
+    assert "Project Index" in content
+    assert "Discussions" in content
     assert "2024-04-04" in content
 
     # Check index.json
@@ -98,7 +98,7 @@ def test_init_creates_schema_and_log(tmp_path):
     assert (pdir / "log.md").exists()
     assert (pdir / "index.md").exists()
     schema = (pdir / "schema.md").read_text()
-    assert "AI 行为规范" in schema
+    assert "AI Behavior Spec" in schema
 
 
 # ---------------------------------------------------------------------------

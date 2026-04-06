@@ -23,7 +23,7 @@ research wiki. Include:
 2. Relevance to ongoing research
 3. Techniques that might be useful
 
-Output in the same language as the input. Use LaTeX for math ($...$)."""
+Use LaTeX for math ($...$)."""
 
 
 async def _ingest_paper(
@@ -39,7 +39,7 @@ async def _ingest_paper(
     # Generate summary via LLM
     summary = await llm.complete(
         PAPER_SUMMARY_PROMPT,
-        f"论文标题: {title}\n作者: {author}\n\n内容:\n{content[:8000]}",
+        f"Paper title: {title}\nAuthor: {author}\n\nContent:\n{content[:8000]}",
     )
 
     # Create slug for filename
@@ -55,7 +55,7 @@ async def _ingest_paper(
             "ingested": datetime.now().isoformat(),
             "source": source.get("source", ""),
         },
-        body=f"# {title}\n\n**作者**: {author}\n\n## 摘要与关键结果\n\n{summary}\n\n## 原文节选\n\n{content[:3000]}\n",
+        body=f"# {title}\n\n**Author**: {author}\n\n## Summary and Key Results\n\n{summary}\n\n## Excerpt\n\n{content[:3000]}\n",
     )
     path = doc.write(project_dir / "references" / f"{slug}.md")
     return {"type": "paper", "file": str(path), "title": title}
@@ -74,7 +74,7 @@ def _ingest_discussion(
     ts_str = source.get("timestamp")
     ts = datetime.fromisoformat(ts_str) if ts_str else datetime.now()
 
-    full_content = f"[导入] {title}\n\n{content}" if title else content
+    full_content = f"[Import] {title}\n\n{content}" if title else content
     path, count = append_message(project_dir, author, full_content, ts)
     return {"type": "discussion", "file": str(path), "message_count": count}
 

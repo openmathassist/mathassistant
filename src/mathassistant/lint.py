@@ -15,8 +15,7 @@ from .storage.frontmatter import Document
 
 LINT_SYSTEM_PROMPT = """\
 You are a mathematical research project auditor. Analyze the provided project
-content and identify issues. Be specific and actionable. Output in the same
-language as the content (Chinese if content is Chinese).
+content and identify issues. Be specific and actionable.
 
 Respond as JSON with this structure:
 {
@@ -78,9 +77,9 @@ def _check_orphan_pages(content: dict[str, list[dict]]) -> list[dict]:
                 issues.append({
                     "type": "orphan",
                     "severity": "low",
-                    "description": f"{f} 没有被任何其他页面引用",
+                    "description": f"{f} is not referenced by any other page",
                     "files": [f],
-                    "suggestion": f"考虑在相关讨论或结论中添加对 {f} 的引用，或者如果不再需要则归档",
+                    "suggestion": f"Consider adding a reference to {f} in related discussions or conclusions, or archive it if no longer needed",
                 })
     return issues
 
@@ -103,9 +102,9 @@ def _check_missing_cross_refs(content: dict[str, list[dict]]) -> list[dict]:
             issues.append({
                 "type": "missing_concept",
                 "severity": "medium",
-                "description": f"问题 {pid} 没有相关的结论页面",
+                "description": f"Problem {pid} has no related conclusion page",
                 "files": [p["file"]],
-                "suggestion": "讨论中是否有关于此问题的部分结论可以提取？",
+                "suggestion": "Are there partial conclusions in discussions that could be extracted for this problem?",
             })
 
     return issues
@@ -141,7 +140,7 @@ async def run_lint(
     if project_summary.strip():
         response = await llm.complete(
             LINT_SYSTEM_PROMPT,
-            f"请审核以下数学研究项目:\n\n{project_summary}",
+            f"Please audit the following math research project:\n\n{project_summary}",
         )
 
         try:
@@ -152,7 +151,7 @@ async def run_lint(
         except json.JSONDecodeError:
             next_steps = []
     else:
-        next_steps = [{"direction": "项目为空，开始添加讨论或问题", "reason": "项目初始化"}]
+        next_steps = [{"direction": "Project is empty, start adding discussions or problems", "reason": "Project initialization"}]
 
     # Sort by severity
     severity_order = {"high": 0, "medium": 1, "low": 2}

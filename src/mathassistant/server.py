@@ -95,7 +95,7 @@ def init_project(project_dir: str, project_name: str) -> dict:
     from .project import initialize_project
 
     result = initialize_project(Path(project_dir), project_name)
-    _cascade_update(project_dir, "init", f"项目初始化: {project_name}")
+    _cascade_update(project_dir, "init", f"Project initialized: {project_name}")
     return result
 
 
@@ -144,7 +144,7 @@ def generate_summary(
     import asyncio
 
     result = asyncio.run(summarize(Path(project_dir), d, scope))
-    _cascade_update(project_dir, "summary", f"生成{scope}摘要")
+    _cascade_update(project_dir, "summary", f"Generated {scope} summary")
     return result
 
 
@@ -167,7 +167,7 @@ def detect_problems(
     result = asyncio.run(detect(Path(project_dir), content, context_messages))
     if result.get("detected"):
         n = len(result.get("candidates", []))
-        _cascade_update(project_dir, "detect", f"检测到 {n} 个待证问题信号")
+        _cascade_update(project_dir, "detect", f"Detected {n} problem signal(s)")
     return result
 
 
@@ -187,7 +187,7 @@ def draft_problem(
         create_draft(Path(project_dir), source_text, context_messages, problem_type)
     )
     _cascade_update(
-        project_dir, "draft", f"创建问题草稿 {result.get('draft_id', '')}: {result.get('title', '')[:40]}"
+        project_dir, "draft", f"Created problem draft {result.get('draft_id', '')}: {result.get('title', '')[:40]}"
     )
     return result
 
@@ -218,7 +218,7 @@ def refine_problem(
     import asyncio
 
     result = asyncio.run(refine(Path(project_dir), draft_id, user_response))
-    status = "通过" if result.get("ready_to_finalize") else "继续精炼"
+    status = "passed" if result.get("ready_to_finalize") else "refining"
     _cascade_update(project_dir, "refine", f"{draft_id} {status}")
     return result
 
@@ -232,7 +232,7 @@ def finalize_problem(project_dir: str, draft_id: str) -> dict:
 
     result = asyncio.run(finalize(Path(project_dir), draft_id))
     if not result.get("error"):
-        _cascade_update(project_dir, "finalize", f"问题已写入 {result.get('file_path', '')}")
+        _cascade_update(project_dir, "finalize", f"Problem written to {result.get('file_path', '')}")
     return result
 
 
@@ -250,7 +250,7 @@ def lint_project(project_dir: str) -> dict:
 
     result = asyncio.run(run_lint(Path(project_dir)))
     n_issues = len(result.get("issues", []))
-    _cascade_update(project_dir, "lint", f"发现 {n_issues} 个问题")
+    _cascade_update(project_dir, "lint", f"Found {n_issues} issue(s)")
     return result
 
 
@@ -273,7 +273,7 @@ def batch_ingest(
     import asyncio
 
     result = asyncio.run(batch_ingest_sources(Path(project_dir), sources))
-    _cascade_update(project_dir, "batch-ingest", f"批量导入 {len(sources)} 个来源")
+    _cascade_update(project_dir, "batch-ingest", f"Batch ingested {len(sources)} source(s)")
     return result
 
 

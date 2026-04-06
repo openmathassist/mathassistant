@@ -68,18 +68,18 @@ def update_index(project_dir: Path) -> dict:
 
     # --- Write index.md (human-readable, LLM navigation entry) ---
     lines = [
-        "# 项目索引",
+        "# Project Index",
         "",
-        f"*最后更新: {datetime.now().strftime('%Y-%m-%d %H:%M')}*",
+        f"*Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*",
         "",
     ]
 
     section_labels = {
-        "problems": "待证明问题",
-        "conclusions": "结论",
-        "discussions": "讨论记录",
-        "attempts": "证明尝试",
-        "references": "参考文献",
+        "problems": "Problems",
+        "conclusions": "Conclusions",
+        "discussions": "Discussions",
+        "attempts": "Attempts",
+        "references": "References",
     }
 
     for subdir, label in section_labels.items():
@@ -91,7 +91,7 @@ def update_index(project_dir: Path) -> dict:
                 lines.append(f"- [{e['id']}]({e['file']}) — {e['summary']}")
             lines.append("")
         else:
-            lines.append("(暂无)")
+            lines.append("(none)")
             lines.append("")
 
     index_md_path = project_dir / "index.md"

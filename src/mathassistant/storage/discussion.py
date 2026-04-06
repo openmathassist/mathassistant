@@ -36,7 +36,7 @@ def append_message(
                 "participants": [author],
                 "topics": [],
             },
-            body=f"# {d.isoformat()} 讨论\n",
+            body=f"# {d.isoformat()} Discussion\n",
             path=path,
         )
 

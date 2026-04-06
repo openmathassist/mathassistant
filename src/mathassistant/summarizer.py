@@ -16,7 +16,6 @@ Focus on:
 3. Conclusions reached or open questions remaining
 4. Action items or next steps mentioned
 
-Output in the same language as the discussion (Chinese if the discussion is in Chinese).
 Keep the summary under 500 words."""
 
 
@@ -53,7 +52,7 @@ async def summarize(
 
     summary_text = await llm.complete(
         SUMMARY_SYSTEM_PROMPT,
-        f"请总结以下讨论内容:\n\n{content}",
+        f"Please summarize the following discussion:\n\n{content}",
     )
 
     return {

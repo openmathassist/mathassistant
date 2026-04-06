@@ -28,7 +28,7 @@ def initialize_project(project_dir: Path, project_name: str) -> dict:
             "created": __import__("datetime").date.today().isoformat(),
             "status": "active",
         },
-        body=f"# {project_name}\n\n数学研究项目。\n",
+        body=f"# {project_name}\n\nMath research project.\n",
     )
     readme.write(project_dir / "README.md")
 
@@ -40,7 +40,7 @@ def initialize_project(project_dir: Path, project_name: str) -> dict:
             "participants": [],
             "keywords": [],
         },
-        body="# 问题定义\n\n## 陈述\n\n[待填写]\n\n## 动机\n\n[待填写]\n",
+        body="# Problem Definition\n\n## Statement\n\n[TODO]\n\n## Motivation\n\n[TODO]\n",
     )
     problem.write(project_dir / "problem.md")
 
@@ -48,20 +48,19 @@ def initialize_project(project_dir: Path, project_name: str) -> dict:
     schema_path = project_dir / "schema.md"
     if not schema_path.exists():
         schema_path.write_text(
-            f"# {project_name} — AI 行为规范\n\n"
-            "此文件定义 AI 在本项目中的行为规范，随项目演进可更新。\n\n"
-            "## 领域约定\n\n[待填写：本项目涉及的数学领域、常用记号约定]\n\n"
-            "## 工作偏好\n\n- 语言：中文为主，数学术语保留英文\n"
-            "- 证明风格：[待定]\n"
-            "- 问题精炼：优先确保自包含性\n\n"
-            "## 优先级\n\n[待填写：当前阶段的重点方向]\n",
+            f"# {project_name} — AI Behavior Spec\n\n"
+            "This file defines AI behavior guidelines for this project. Updated as the project evolves.\n\n"
+            "## Domain Conventions\n\n[TODO: math domains involved, notation conventions]\n\n"
+            "## Work Preferences\n\n- Proof style: [TBD]\n"
+            "- Problem refinement: prioritize self-containedness\n\n"
+            "## Priorities\n\n[TODO: current focus areas]\n",
             encoding="utf-8",
         )
 
     # Create log.md
     log_path = project_dir / "log.md"
     if not log_path.exists():
-        log_path.write_text("# 项目日志\n\n", encoding="utf-8")
+        log_path.write_text("# Project Log\n\n", encoding="utf-8")
 
     # Build initial index
     from .storage.index import update_index

@@ -14,7 +14,7 @@ REFINE_SYSTEM_PROMPT = """\
 You are a mathematical research assistant. The user has responded to a quality check
 question about a problem draft. Update the problem draft to incorporate their response.
 
-Output the COMPLETE updated problem body (all sections: 定义, 假设条件, 目标, etc.).
+Output the COMPLETE updated problem body (all sections: Definitions, Assumptions, Goal, etc.).
 Do NOT output JSON — output the full Markdown body directly."""
 
 
@@ -53,10 +53,10 @@ async def refine(
     # Ask LLM to update the draft
     updated_body = await llm.complete(
         REFINE_SYSTEM_PROMPT,
-        f"当前问题草稿:\n\n{doc.body}\n\n"
-        f"质量检查提出的问题: {question_context}\n\n"
-        f"用户回复: {user_response}\n\n"
-        f"请输出更新后的完整问题文档（Markdown 格式）。",
+        f"Current problem draft:\n\n{doc.body}\n\n"
+        f"Quality check question: {question_context}\n\n"
+        f"User response: {user_response}\n\n"
+        f"Please output the complete updated problem document (Markdown format).",
     )
 
     # Update draft

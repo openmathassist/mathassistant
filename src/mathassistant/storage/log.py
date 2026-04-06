@@ -24,7 +24,7 @@ def append_log(
     log_path = project_dir / "log.md"
 
     if not log_path.exists():
-        log_path.write_text("# 项目日志\n\n", encoding="utf-8")
+        log_path.write_text("# Project Log\n\n", encoding="utf-8")
 
     entry = f"## [{date_str} {time_str}] {operation} | {description}\n\n"
 

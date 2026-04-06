@@ -84,11 +84,11 @@ async def check_definitions(doc: Document, llm: LLMBackend) -> CheckResult:
     data = _extract_json(response)
     if data is None:
         return CheckResult("definitions", Severity.WARN, "Could not parse definition check result.",
-                          "请检查问题中所有数学符号是否都有定义。")
+                          "Please check that all mathematical symbols in the problem are defined.")
     if data.get("all_defined", True):
         return CheckResult("definitions", Severity.PASS, "All symbols defined.")
     undefined = data.get("undefined", [])
-    question = data.get("question", f"以下符号未定义: {', '.join(str(s) for s in undefined)}，请补充定义。")
+    question = data.get("question", f"The following symbols are undefined: {', '.join(str(s) for s in undefined)}. Please provide definitions.")
     return CheckResult("definitions", Severity.FAIL, f"Undefined symbols: {undefined}", question)
 
 
@@ -105,11 +105,11 @@ async def check_assumptions_explicit(doc: Document, llm: LLMBackend) -> CheckRes
     data = _extract_json(response)
     if data is None:
         return CheckResult("assumptions_explicit", Severity.WARN, "Could not parse check result.",
-                          "请检查是否有隐含的假设条件未明确写出。")
+                          "Please check whether there are implicit assumptions not explicitly stated.")
     if data.get("all_explicit", True):
         return CheckResult("assumptions_explicit", Severity.PASS, "All assumptions explicit.")
     implicit = data.get("implicit", [])
-    question = data.get("question", f"以下假设可能是隐含的: {', '.join(str(s) for s in implicit)}，是否需要显式声明？")
+    question = data.get("question", f"The following assumptions may be implicit: {', '.join(str(s) for s in implicit)}. Should they be stated explicitly?")
     return CheckResult("assumptions_explicit", Severity.FAIL, f"Implicit assumptions: {implicit}", question)
 
 
@@ -124,11 +124,11 @@ async def check_assumptions_consistent(doc: Document, llm: LLMBackend) -> CheckR
     data = _extract_json(response)
     if data is None:
         return CheckResult("assumptions_consistent", Severity.WARN, "Could not parse check result.",
-                          "请检查假设条件之间是否存在矛盾或冗余。")
+                          "Please check whether the assumptions are contradictory or redundant.")
     if data.get("consistent", True):
         return CheckResult("assumptions_consistent", Severity.PASS, "Assumptions are consistent.")
     issues = data.get("issues", [])
-    question = data.get("question", f"假设存在以下问题: {'; '.join(str(s) for s in issues)}")
+    question = data.get("question", f"The assumptions have the following issues: {'; '.join(str(s) for s in issues)}")
     return CheckResult("assumptions_consistent", Severity.FAIL, f"Consistency issues: {issues}", question)
 
 
@@ -144,10 +144,10 @@ async def check_goal_clarity(doc: Document, llm: LLMBackend) -> CheckResult:
     data = _extract_json(response)
     if data is None:
         return CheckResult("goal_clarity", Severity.WARN, "Could not parse check result.",
-                          "请确认证明目标是一个明确的数学命题。")
+                          "Please confirm that the proof goal is a precise mathematical proposition.")
     if data.get("clear", True):
         return CheckResult("goal_clarity", Severity.PASS, "Goal is clear.")
-    question = data.get("question", "目标不够明确，请将其精确为一个可证伪的数学命题。")
+    question = data.get("question", "The goal is not clear enough. Please refine it into a precise, falsifiable mathematical proposition.")
     return CheckResult("goal_clarity", Severity.FAIL, data.get("issue", "Goal is unclear"), question)
 
 
@@ -166,7 +166,7 @@ async def check_type_strength(doc: Document, llm: LLMBackend) -> CheckResult:
         return CheckResult("type_strength", Severity.PASS, "Type check inconclusive, proceeding.")
     if data.get("appropriate", True):
         return CheckResult("type_strength", Severity.PASS, "Type is appropriate.")
-    question = data.get("question", data.get("suggestion", "命题类型可能不太合适，请确认。"))
+    question = data.get("question", data.get("suggestion", "The proposition type may not be appropriate. Please confirm."))
     return CheckResult("type_strength", Severity.WARN, data.get("suggestion", "Type may be inappropriate"), question)
 
 
@@ -187,7 +187,7 @@ async def check_formalizability(doc: Document, llm: LLMBackend) -> CheckResult:
     if data.get("formalizable", True) and difficulty != "hard":
         return CheckResult("formalizability", Severity.PASS, f"Formalizable (difficulty: {difficulty}).")
     notes = data.get("notes", "")
-    question = data.get("question", f"形式化难度较高: {notes}")
+    question = data.get("question", f"Formalization difficulty is high: {notes}")
     return CheckResult("formalizability", Severity.WARN, notes, question)
 
 
@@ -206,7 +206,7 @@ async def check_edge_cases(doc: Document, llm: LLMBackend) -> CheckResult:
     if data.get("covered", True):
         return CheckResult("edge_cases", Severity.PASS, "Edge cases covered.")
     missing = data.get("missing", [])
-    question = data.get("question", f"以下边界情况未处理: {', '.join(str(s) for s in missing)}")
+    question = data.get("question", f"The following edge cases are not addressed: {', '.join(str(s) for s in missing)}")
     return CheckResult("edge_cases", Severity.WARN, f"Missing edge cases: {missing}", question)
 
 

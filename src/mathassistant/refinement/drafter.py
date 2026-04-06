@@ -18,7 +18,6 @@ from the given discussion text. The document must:
 3. Have a clear, precise goal (a concrete mathematical proposition)
 4. Be readable WITHOUT the original discussion context
 
-Output in the language of the input (Chinese if input is Chinese).
 Use LaTeX notation for math ($...$).
 
 Structure your response as JSON with these fields:
@@ -42,12 +41,12 @@ async def create_draft(
 
     context_str = ""
     if context_messages:
-        context_str = "\n\n讨论上下文:\n" + "\n".join(context_messages[-10:])
+        context_str = "\n\nDiscussion context:\n" + "\n".join(context_messages[-10:])
 
     response = await llm.complete(
         DRAFT_SYSTEM_PROMPT,
-        f"从以下讨论中提取问题:\n\n{source_text}{context_str}\n\n"
-        f"问题类型: {problem_type}\n"
+        f"Extract a problem from the following discussion:\n\n{source_text}{context_str}\n\n"
+        f"Problem type: {problem_type}\n"
         f"Respond as JSON with fields: title, definitions, assumptions, goal, known_results, notes"
     )
 
@@ -55,7 +54,7 @@ async def create_draft(
     data = _extract_json(response)
     if data is None:
         data = {
-            "title": "待定义的问题",
+            "title": "Undefined problem",
             "definitions": source_text,
             "assumptions": "",
             "goal": "",
@@ -66,17 +65,17 @@ async def create_draft(
     draft_id = f"draft-{uuid.uuid4().hex[:6]}"
 
     # Build markdown body
-    body_parts = [f"# {data.get('title', '问题')}"]
+    body_parts = [f"# {data.get('title', 'Problem')}"]
     if data.get("definitions"):
-        body_parts.append(f"\n## 定义\n\n{data['definitions']}")
+        body_parts.append(f"\n## Definitions\n\n{data['definitions']}")
     if data.get("assumptions"):
-        body_parts.append(f"\n## 假设条件\n\n{data['assumptions']}")
+        body_parts.append(f"\n## Assumptions\n\n{data['assumptions']}")
     if data.get("goal"):
-        body_parts.append(f"\n## 目标\n\n{data['goal']}")
+        body_parts.append(f"\n## Goal\n\n{data['goal']}")
     if data.get("known_results"):
-        body_parts.append(f"\n## 已知相关结果\n\n{data['known_results']}")
+        body_parts.append(f"\n## Known Results\n\n{data['known_results']}")
     if data.get("notes"):
-        body_parts.append(f"\n## 备注\n\n{data['notes']}")
+        body_parts.append(f"\n## Notes\n\n{data['notes']}")
 
     body = "\n".join(body_parts) + "\n"
 

@@ -28,7 +28,7 @@ class RefinementMockLLM:
             })
 
         # Drafting
-        if "提取问题" in user_message or "从以下讨论" in user_message:
+        if "Extract a problem" in user_message or "Problem type" in user_message:
             return json.dumps({
                 "title": "紧致算子谱半径收敛",
                 "definitions": "设 $X$ 为 Banach 空间，$T: X \\to X$ 为紧致算子。",
@@ -39,7 +39,7 @@ class RefinementMockLLM:
             })
 
         # Refinement (updating draft with user response)
-        if "更新后的完整问题文档" in user_message:
+        if "updated problem document" in user_message.lower() or "Current problem draft" in user_message:
             return (
                 "# 紧致算子谱半径收敛\n\n"
                 "## 定义\n\n设 $X$ 为 Banach 空间，$T: X \\to X$ 为紧致算子，$r(T)$ 为谱半径。\n\n"
