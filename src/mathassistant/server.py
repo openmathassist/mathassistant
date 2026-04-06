@@ -278,6 +278,337 @@ def batch_ingest(
 
 
 # ---------------------------------------------------------------------------
+# Verification tools
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def search_knowledge(project_dir: str, query: str, max_results: int = 5) -> dict:
+    """Search project knowledge base for relevant theorems, definitions, and results.
+    
+    This is a lightweight theorem search - searches through project markdown files
+    for content matching the query. For deep theorem search, consider integrating
+    with external tools like Semantic Scholar API.
+    
+    Args:
+        project_dir: Project directory to search in
+        query: Search query (can be mathematical concept, theorem name, etc.)
+        max_results: Maximum number of results to return (default 5)
+    
+    Returns:
+        dict with list of relevant results (file paths, snippets, relevance scores)
+    """
+    import json
+    from pathlib import Path
+    from ..llm.base import get_llm_backend, _extract_json
+
+    project = Path(project_dir)
+    if not project.exists():
+        return {"error": f"Project not found: {project_dir}", "results": []}
+
+    # Search through markdown files
+    md_files = list(project.rglob("*.md"))
+    results = []
+    
+    query_lower = query.lower()
+    
+    for md_file in md_files:
+        # Skip hidden and draft files for search
+        if "/." in str(md_file) or "draft" in str(md_file):
+            continue
+            
+        try:
+            content = md_file.read_text(encoding="utf-8")
+            lines = content.split("\n")
+            
+            # Find matching lines
+            matches = []
+            for i, line in enumerate(lines):
+                if query_lower in line.lower():
+                    # Get context (surrounding lines)
+                    start = max(0, i - 2)
+                    end = min(len(lines), i + 3)
+                    context = "\n".join(lines[start:end])
+                    matches.append({
+                        "line": i + 1,
+                        "text": line.strip()[:200],
+                        "context": context[:500]
+                    })
+            
+            if matches:
+                results.append({
+                    "file": str(md_file.relative_to(project)),
+                    "matches": matches[:3],  # Top 3 matches per file
+                    "score": len(matches)
+                })
+                
+        except Exception:
+            continue
+    
+    # Sort by score and limit
+    results.sort(key=lambda x: x["score"], reverse=True)
+    results = results[:max_results]
+    
+    # Clean up for return
+    for r in results:
+        del r["score"]
+        for m in r["matches"]:
+            del m["score"] if "score" in m else None
+    
+    return {
+        "query": query,
+        "results": results,
+        "total_files_searched": len(md_files)
+    }
+
+
+@mcp.tool()
+def detect_gaps(content: str, proof_type: str = "standard") -> dict:
+    """Detect potential gaps in a proof using LLM analysis.
+    
+    This tool analyzes proof content to identify:
+    - Missing steps
+    - Implicit assumptions
+    - Logical gaps
+    - Unjustified claims
+    
+    Args:
+        content: The proof content to analyze
+        proof_type: Type of proof ("standard", "induction", "constructive", "existence")
+    
+    Returns:
+        dict with identified gaps and suggestions
+    """
+    from ..llm.base import get_llm_backend, _extract_json
+    import json
+    import asyncio
+
+    llm = get_llm_backend()
+    
+    prompt = f"""Analyze this proof and identify any gaps, missing steps, or logical issues.
+
+Proof type hint: {proof_type}
+
+Proof content:
+{content}
+
+Identify:
+1. Missing steps (steps that are assumed without justification)
+2. Implicit assumptions (things used but not stated)
+3. Logical gaps (jumps in reasoning)
+4. Unjustified claims (assertions without proof)
+5. Circular reasoning (if any)
+
+Respond ONLY with JSON:
+{{
+  "has_gaps": true/false,
+  "gap_count": number,
+  "gaps": [
+    {{
+      "type": "missing_step|implicit_assumption|logical_gap|unjustified_claim",
+      "location": "brief description of where in proof",
+      "description": "what's missing or wrong",
+      "severity": "high|medium|low",
+      "suggestion": "how to fix"
+    }}
+  ],
+  "overall_assessment": "brief summary"
+}}"""
+
+    try:
+        loop = asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(loop.run_until_complete, llm.complete(
+                "You are a mathematical proof reviewer.", prompt
+            ))
+            response = future.result()
+    except RuntimeError:
+        response = asyncio.run(llm.complete(
+            "You are a mathematical proof reviewer.", prompt
+        ))
+
+    data = _extract_json(response)
+    if data is None:
+        return {
+            "has_gaps": False,
+            "gap_count": 0,
+            "gaps": [],
+            "error": "Could not parse LLM response"
+        }
+    
+    return {
+        "has_gaps": data.get("has_gaps", False),
+        "gap_count": data.get("gap_count", 0),
+        "gaps": data.get("gaps", []),
+        "overall_assessment": data.get("overall_assessment", "")
+    }
+
+
+@mcp.tool()
+def classify_conjecture(project_dir: str, file_path: str) -> dict:
+    """Classify a conjecture/problem and map its relationships.
+    
+    Analyzes a problem file to determine:
+    - Conjecture type (existence, uniqueness, classification, bound, equivalence)
+    - Difficulty level
+    - Relationships to other problems
+    
+    Args:
+        project_dir: Project directory
+        file_path: Path to problem/conjecture file
+    
+    Returns:
+        dict with classification and relationships
+    """
+    from ..llm.base import get_llm_backend, _extract_json
+    import json
+    import asyncio
+    from pathlib import Path
+
+    path = Path(file_path)
+    if not path.exists():
+        return {"error": f"File not found: {file_path}"}
+
+    content = path.read_text()
+    llm = get_llm_backend()
+    
+    prompt = f"""Classify this mathematical problem/conjecture.
+
+Content:
+{content[:3000]}
+
+Determine:
+1. Type: existence|uniqueness|classification|bound|equivalence|other
+2. Difficulty: easy|medium|hard|open|unknown
+3. Key mathematical structures involved
+4. Potential generalizations
+5. Related problem types
+
+Respond ONLY with JSON:
+{{
+  "type": "existence|uniqueness|classification|bound|equivalence|other",
+  "difficulty": "easy|medium|hard|open|unknown",
+  "structures": ["list of mathematical structures"],
+  "generalizations": ["possible generalizations"],
+  "related_types": ["related problem types"],
+  "keywords": ["relevant keywords for search"]
+}}"""
+
+    try:
+        loop = asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(loop.run_until_complete, llm.complete(
+                "You are a mathematical classifier.", prompt
+            ))
+            response = future.result()
+    except RuntimeError:
+        response = asyncio.run(llm.complete(
+            "You are a mathematical classifier.", prompt
+        ))
+
+    data = _extract_json(response)
+    if data is None:
+        return {
+            "type": "unknown",
+            "difficulty": "unknown",
+            "error": "Could not parse LLM response"
+        }
+    
+    # Update frontmatter if it exists
+    # (This is a basic implementation - could be extended)
+    
+    return {
+        "file": str(path.relative_to(Path(project_dir))),
+        "type": data.get("type", "unknown"),
+        "difficulty": data.get("difficulty", "unknown"),
+        "structures": data.get("structures", []),
+        "generalizations": data.get("generalizations", []),
+        "related_types": data.get("related_types", []),
+        "keywords": data.get("keywords", [])
+    }
+
+
+@mcp.tool()
+def verify_markdown(file_path: str, verification_type: str = "problem") -> dict:
+    """Verify a markdown file using LLM (via MCP server for clean context isolation).
+    
+    Args:
+        file_path: Path to the md file to verify
+        verification_type: "problem" or "proof"
+            - "problem": Verify statement is complete, correct, non-trivial, well-posed
+            - "proof": Verify proof is complete, correct, no gaps, no errors
+    
+    Returns:
+        dict with keys: valid (bool), issues (list), message (str)
+    """
+    from .llm.base import get_llm_backend
+    from .quality.checks import _extract_json
+    import json
+    from pathlib import Path
+
+    path = Path(file_path)
+    if not path.exists():
+        return {"valid": False, "issues": [], "message": f"File not found: {file_path}"}
+
+    content = path.read_text()
+    llm = get_llm_backend()
+
+    if verification_type == "problem":
+        prompt = f"""You are a mathematical quality checker. Analyze this problem statement and determine if it is:
+- Complete: all assumptions stated
+- Correct: mathematically sound  
+- Non-trivial: has substance, not obvious
+- Well-posed: no ambiguity
+
+Problem statement:
+{content}
+
+Respond ONLY with JSON:
+{{"valid": true/false, "issues": ["issue1", "issue2", ...], "message": "brief explanation"}}"""
+    else:  # proof
+        prompt = f"""You are a mathematical proof verifier. Analyze this proof and determine if it is:
+- Complete: all steps present
+- Correct: logic valid
+- No gaps: no missing reasoning steps
+- No errors: no mathematical mistakes
+
+Proof content:
+{content}
+
+Respond ONLY with JSON:
+{{"valid": true/false, "gaps": ["gap1", ...], "errors": ["error1", ...], "message": "brief explanation"}}"""
+
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(loop.run_until_complete, llm.complete("You are a helpful assistant.", prompt))
+            response = future.result()
+    except RuntimeError:
+        response = asyncio.run(llm.complete("You are a helpful assistant.", prompt))
+
+    data = _extract_json(response)
+    if data is None:
+        return {"valid": False, "issues": ["Could not parse LLM response"], "message": response[:200] if response else "No response"}
+
+    if verification_type == "problem":
+        return {
+            "valid": data.get("valid", False),
+            "issues": data.get("issues", []),
+            "message": data.get("message", "")
+        }
+    else:  # proof
+        return {
+            "valid": data.get("valid", False),
+            "issues": data.get("gaps", []) + data.get("errors", []),
+            "message": data.get("message", "")
+        }
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
