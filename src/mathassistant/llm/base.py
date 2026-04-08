@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
@@ -66,6 +67,17 @@ def get_llm_backend() -> LLMBackend:
             endpoint=config.llm_endpoint or "http://localhost:8080/v1/chat/completions",
             api_key=config.llm_api_key,
             model=config.llm_model,
+        )
+    elif backend == "openclaw":
+        from ..openclaw.client import OpenClawClient
+
+        return OpenClawClient(
+            project_dir=Path(config.default_project_dir)
+            if config.default_project_dir
+            else None,
+            default_model=config.openclaw_default_model,
+            default_thinking=config.openclaw_default_thinking,
+            default_agent=config.openclaw_default_agent,
         )
     else:
         raise ValueError(f"Unknown LLM backend: {backend}")

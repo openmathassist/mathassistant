@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -13,6 +13,10 @@ class Config:
     llm_endpoint: str | None = None
     llm_model: str | None = None
     default_project_dir: str | None = None
+    # OpenClaw-specific settings
+    openclaw_default_agent: str = "coder"
+    openclaw_default_model: str = "gemini/gemini-2.5-pro"
+    openclaw_default_thinking: str = "xhigh"
 
     @classmethod
     def from_env(cls) -> Config:
@@ -23,7 +27,9 @@ class Config:
         if explicit_key:
             api_key = explicit_key
         elif backend == "gemini":
-            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get(
+                "GEMINI_API_KEY"
+            )
         elif backend == "claude":
             api_key = os.environ.get("ANTHROPIC_API_KEY")
         elif backend == "openai":
@@ -42,6 +48,13 @@ class Config:
             llm_endpoint=os.environ.get("MATHASSIST_LLM_ENDPOINT"),
             llm_model=os.environ.get("MATHASSIST_LLM_MODEL"),
             default_project_dir=os.environ.get("MATHASSIST_PROJECT_DIR"),
+            openclaw_default_agent=os.environ.get("MATHASSIST_OPENCLAW_AGENT", "coder"),
+            openclaw_default_model=os.environ.get(
+                "MATHASSIST_OPENCLAW_MODEL", "gemini/gemini-2.5-pro"
+            ),
+            openclaw_default_thinking=os.environ.get(
+                "MATHASSIST_OPENCLAW_THINKING", "xhigh"
+            ),
         )
 
 

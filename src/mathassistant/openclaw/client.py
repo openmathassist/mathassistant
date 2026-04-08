@@ -1,36 +1,51 @@
 """OpenClaw agent client for mathassistant.
 
 Calls OpenClaw agents instead of direct LLM APIs.
+Implements LLMBackend Protocol for drop-in replacement.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional
 
+from ..llm.base import LLMBackend
 
-class OpenClawClient:
-    """Client for calling OpenClaw agents via CLI."""
-    
+
+class OpenClawClient(LLMBackend):
+    """Client for calling OpenClaw agents via CLI.
+
+    Implements LLMBackend Protocol so it can replace direct LLM API calls.
+    """
+
     def __init__(
-        self, 
-        project_dir: Optional[Path] = None, 
+        self,
+        project_dir: Optional[Path] = None,
         timeout: int = 300,
         default_model: str = "gemini/gemini-2.5-pro",
         default_thinking: str = "xhigh",
+        default_agent: str = "coder",
     ):
         self.project_dir = project_dir
         self.timeout = timeout
-        self._default_agent = os.environ.get("MATHASSIST_OPENCLAW_AGENT", "coder")
+        self._default_agent = default_agent
         self._default_model = default_model
         self._default_thinking = default_thinking
-    
-    def _run_openclaw(self, args: list[str], cwd: Optional[Path] = None, model: Optional[str] = None, thinking: Optional[str] = None) -> subprocess.CompletedProcess:
+
+    def _run_openclaw(
+        self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        model: Optional[str] = None,
+        thinking: Optional[str] = None,
+    ) -> subprocess.CompletedProcess:
         """Run openclaw CLI command.
-        
+
         Args:
             args: Command arguments
             cwd: Working directory
@@ -38,7 +53,7 @@ class OpenClawClient:
             thinking: Thinking level (off|minimal|low|medium|high|xhigh)
         """
         cmd = ["openclaw"] + args
-        
+
         # Build environment with overrides
         env = {**os.environ}
         if self.project_dir:
@@ -47,27 +62,27 @@ class OpenClawClient:
             env["OPENCLAW_AGENT_MODEL"] = model
         if thinking:
             env["OPENCLAW_AGENT_THINKING"] = thinking
-            
+
         return subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=self.timeout,
             cwd=cwd or self.project_dir,
-            env=env
+            env=env,
         )
-    
+
     def call_agent(
-        self, 
-        agent_id: str, 
-        message: str, 
+        self,
+        agent_id: str,
+        message: str,
         timeout: Optional[int] = None,
         local: bool = True,
         model: Optional[str] = None,
         thinking: Optional[str] = None,
     ) -> str:
         """Call an OpenClaw agent with a message.
-        
+
         Args:
             agent_id: Agent ID (coder, helper, main, etc.)
             message: Message to send to the agent
@@ -75,7 +90,7 @@ class OpenClawClient:
             local: Run locally (True) or via Gateway (False)
             model: Model override (default: gemini/gemini-2.5-pro)
             thinking: Thinking level (default: xhigh for maximum)
-            
+
         Returns:
             Agent's response text
         """
@@ -84,34 +99,39 @@ class OpenClawClient:
             model = self._default_model
         if thinking is None:
             thinking = self._default_thinking
-            
+
         args = ["agent", "--agent", agent_id, "--message", message]
         if local:
             args.append("--local")
-        
-        result = self._run_openclaw(args, cwd=self.project_dir, model=model, thinking=thinking)
-        
+
+        result = self._run_openclaw(
+            args, cwd=self.project_dir, model=model, thinking=thinking
+        )
+
         if result.returncode != 0:
-            error_msg = result.stderr.strip() or f"Agent {agent_id} failed with code {result.returncode}"
+            error_msg = (
+                result.stderr.strip()
+                or f"Agent {agent_id} failed with code {result.returncode}"
+            )
             raise RuntimeError(f"OpenClaw agent error: {error_msg}")
-        
+
         return result.stdout.strip()
-    
+
     def detect_problem_signals(
-        self, 
-        content: str, 
+        self,
+        content: str,
         context_messages: list[str] | None = None,
         model: Optional[str] = None,
         thinking: Optional[str] = None,
     ) -> dict:
         """Use coder agent to detect mathematical problem signals.
-        
+
         This replaces the direct LLM call in refinement/detector.py
         """
         context_str = ""
         if context_messages:
             context_str = "\n\nRecent context:\n" + "\n".join(context_messages[-5:])
-        
+
         prompt = f"""Analyze this mathematical discussion for problem signals.
 
 Content to analyze:
@@ -138,30 +158,26 @@ JSON format:
 }}
 
 If no signals detected, return {{"detected": false, "candidates": []}}."""
-        
+
         try:
             response = self.call_agent("coder", prompt, model=model, thinking=thinking)
             # Try to extract JSON from response
             return self._extract_json(response)
         except Exception as e:
             # Fallback: return empty detection
-            return {
-                "detected": False,
-                "candidates": [],
-                "error": str(e)
-            }
-    
+            return {"detected": False, "candidates": [], "error": str(e)}
+
     def draft_problem(
-        self, 
-        source_text: str, 
+        self,
+        source_text: str,
         problem_type: str = "conjecture",
         model: Optional[str] = None,
         thinking: Optional[str] = None,
     ) -> dict:
         """Use multi-agent workflow to draft a problem.
-        
+
         Phase 1: coder drafts framework
-        Phase 2: helper finds references  
+        Phase 2: helper finds references
         Phase 3: main formats final output
         """
         # Step 1: coder drafts
@@ -176,9 +192,9 @@ Your task:
 4. State the goal/conclusion
 
 Respond with structured text (not JSON), ready to be formatted as a problem file."""
-        
+
         draft = self.call_agent("coder", draft_prompt, model=model, thinking=thinking)
-        
+
         # Step 2: helper looks for references (lightweight)
         ref_prompt = f"""Quick check: what mathematical areas or key terms appear in this problem?
 
@@ -187,12 +203,12 @@ Problem draft:
 
 List any relevant mathematical concepts, theorems, or references that might be useful.
 Keep it brief (bullet points)."""
-        
+
         try:
             refs = self.call_agent("helper", ref_prompt, model=model, thinking=thinking)
         except Exception:
             refs = "(reference lookup skipped)"
-        
+
         # Step 3: main formats final
         format_prompt = f"""Format this as a proper problem definition:
 
@@ -210,62 +226,133 @@ Create a well-structured problem file with:
 - Brief motivation/context
 
 Format as markdown with YAML frontmatter."""
-        
+
         final = self.call_agent("main", format_prompt, model=model, thinking=thinking)
-        
+
         return {
             "draft_id": f"draft-{hash(source_text) % 10000:04d}",
             "title": self._extract_title(final),
             "body": final,
-            "body_preview": final[:600] + "..." if len(final) > 600 else final
+            "body_preview": final[:600] + "..." if len(final) > 600 else final,
         }
-    
+
     def _extract_json(self, text: str) -> dict:
         """Extract JSON from agent response."""
-        # Try direct parsing first
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-        
-        # Try to find JSON block
-        import re
-        # Look for ```json ... ``` or just {...}
-        patterns = [
-            r'```json\s*(\{.*?\})\s*```',
-            r'```\s*(\{.*?\})\s*```',
-            r'(\{[\s\S]*\})'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.DOTALL)
-            for match in matches:
-                try:
-                    return json.loads(match)
-                except json.JSONDecodeError:
-                    continue
-        
-        # Fallback: return empty
-        return {"detected": False, "candidates": [], "raw": text[:200]}
-    
+        return _extract_json(text)
+
     def _extract_title(self, text: str) -> str:
         """Extract title from problem draft."""
-        import re
         # Look for # Title or first heading
-        match = re.search(r'^#\s+(.+)$', text, re.MULTILINE)
+        match = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
         if match:
             return match.group(1).strip()
         # Fallback: first line
-        return text.split('\n')[0][:60] if text else "Untitled Problem"
+        return text.split("\n")[0][:60] if text else "Untitled Problem"
+
+    # ---------------------------------------------------------------------------
+    # LLMBackend Protocol implementation
+    # ---------------------------------------------------------------------------
+
+    async def complete(
+        self,
+        system_prompt: str,
+        user_message: str,
+        temperature: float = 0.3,
+        max_tokens: int = 4096,
+    ) -> str:
+        """Send a prompt to the default OpenClaw agent and return the response."""
+        prompt = f"{system_prompt}\n\n{user_message}" if system_prompt else user_message
+        return await asyncio.to_thread(
+            self.call_agent,
+            self._default_agent,
+            prompt,
+            timeout=max(60, max_tokens // 10),
+            local=True,
+            model=self._default_model,
+            thinking=self._default_thinking,
+        )
+
+    async def complete_structured(
+        self,
+        system_prompt: str,
+        user_message: str,
+        response_schema: dict,
+        temperature: float = 0.1,
+    ) -> dict:
+        """Send a prompt and request JSON matching the schema."""
+        prompt_parts = [user_message]
+        if system_prompt:
+            prompt_parts.insert(0, system_prompt)
+        prompt_parts.append(
+            f"\n\nRespond with a JSON object matching this schema:\n"
+            f"```json\n{json.dumps(response_schema, indent=2)}\n```\n"
+            f"Output ONLY valid JSON, no other text."
+        )
+        full_prompt = "\n\n".join(prompt_parts)
+
+        text = await asyncio.to_thread(
+            self.call_agent,
+            self._default_agent,
+            full_prompt,
+            timeout=max(60, max_tokens_from_schema(response_schema)),
+            local=True,
+            model=self._default_model,
+            thinking=self._default_thinking,
+        )
+
+        return _extract_json(text)
+
+
+# Module-level helper (avoid re-import issues)
+def _extract_json(text: str) -> dict:
+    """Extract JSON from agent response."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    patterns = [
+        r"```json\s*(\{.*?\})\s*```",
+        r"```\s*(\{.*?\})\s*```",
+        r"(\{[\s\S]*\})",
+    ]
+
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.DOTALL)
+        for match in matches:
+            try:
+                return json.loads(match)
+            except json.JSONDecodeError:
+                continue
+
+    return {"detected": False, "candidates": [], "raw": text[:200]}
+
+
+def max_tokens_from_schema(schema: dict) -> int:
+    """Estimate max tokens needed based on schema size."""
+    json_str = json.dumps(schema)
+    return max(256, len(json_str) * 4)
 
 
 # Singleton instance
 _openclaw_client: OpenClawClient | None = None
 
 
-def get_openclaw_client(project_dir: Optional[Path] = None) -> OpenClawClient:
+def get_openclaw_client(
+    project_dir: Optional[Path] = None,
+    default_model: str = "gemini/gemini-2.5-pro",
+    default_thinking: str = "xhigh",
+    default_agent: str = "coder",
+) -> OpenClawClient:
     """Get or create OpenClaw client singleton."""
     global _openclaw_client
-    if _openclaw_client is None or (project_dir and _openclaw_client.project_dir != project_dir):
-        _openclaw_client = OpenClawClient(project_dir=project_dir)
+    if _openclaw_client is None or (
+        project_dir and _openclaw_client.project_dir != project_dir
+    ):
+        _openclaw_client = OpenClawClient(
+            project_dir=project_dir,
+            default_model=default_model,
+            default_thinking=default_thinking,
+            default_agent=default_agent,
+        )
     return _openclaw_client
