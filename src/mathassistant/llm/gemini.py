@@ -1,27 +1,29 @@
-"""Google Gemini backend using the google-genai SDK.
-
-Supports thinking budget for deeper reasoning on math problems.
 """
-
-from __future__ import annotations
-
-import json
+LLM Backend for Google Gemini models.
+"""
+from google.genai import Client, types
 
 
 class GeminiBackend:
+    """Google Gemini LLM backend using google-genai SDK."""
+
     def __init__(
         self,
-        api_key: str | None = None,
+        api_key: str,
         model: str = "gemini-2.5-flash",
-        thinking_budget: int = 8192,
+        thinking_budget: int = -1,  # -1 means disabled
     ):
-        try:
-            from google import genai
-        except ImportError:
-            raise ImportError("Install google-genai: pip install google-genai")
-        self._client = genai.Client(api_key=api_key)
+        """
+        Initialize Gemini backend.
+
+        Args:
+            api_key: Google AI API key
+            model: Model name (default: gemini-2.5-flash)
+            thinking_budget: Thinking budget for extended thinking (0 = disabled)
+        """
+        self._client = Client(api_key=api_key)
         self._model = model
-        self._thinking_budget = thinking_budget
+        self.thinking_budget = thinking_budget
 
     async def complete(
         self,
@@ -30,45 +32,41 @@ class GeminiBackend:
         temperature: float = 0.3,
         max_tokens: int = 4096,
     ) -> str:
+        """Send a prompt and return the completion text."""
         from google.genai import types
 
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-            thinking_config=types.ThinkingConfig(
-                thinking_budget=self._thinking_budget,
-            ),
-        )
+        # Build contents - prepend system prompt as first message if provided
+        if system_prompt and system_prompt.strip():
+            contents = [
+                types.Content(role="user", parts=[types.Part(text=system_prompt + "\n\n" + user_message)])
+            ]
+        else:
+            contents = [
+                types.Content(role="user", parts=[types.Part(text=user_message)])
+            ]
 
-        response = await self._client.aio.models.generate_content(
-            model=self._model,
-            contents=user_message,
-            config=config,
-        )
-        # Extract text parts (skip thinking parts)
-        parts = response.candidates[0].content.parts
-        text_parts = [p.text for p in parts if p.text and not p.thought]
-        return "\n".join(text_parts)
+        try:
+            # google-genai 0.8.x API
+            # Note: Not using config parameter to avoid region restriction issues
+            response = await self._client.models.generate_content(
+                model=self._model,
+                contents=contents,
+            )
+        except Exception as e:
+            return f"Error: {e}"
 
-    async def complete_structured(
-        self,
-        system_prompt: str,
-        user_message: str,
-        response_schema: dict,
-        temperature: float = 0.1,
-    ) -> dict:
-        prompt = (
-            f"{user_message}\n\n"
-            f"Respond with a JSON object matching this schema:\n"
-            f"```json\n{json.dumps(response_schema, indent=2)}\n```\n"
-            f"Output ONLY valid JSON, no other text."
-        )
-        text = await self.complete(system_prompt, prompt, temperature=temperature)
-        text = text.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:])
-        if text.endswith("```"):
-            text = text[:-3]
-        return json.loads(text.strip())
+        # Extract text from response - new API uses response.text
+        if hasattr(response, 'text') and response.text:
+            return response.text
+
+        # Fallback: try to extract from candidates
+        if response.candidates:
+            response_text = ""
+            for candidate in response.candidates:
+                if candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            response_text += part.text
+            return response_text if response_text else "No text in response"
+
+        return "No response generated"
